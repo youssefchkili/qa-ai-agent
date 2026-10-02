@@ -1,0 +1,59 @@
+# qa-agent on-premise stack: the agent plus a local model server.
+#
+#   docker compose up --build                 # build, start Ollama, verify the agent
+#   docker compose run --rm agent run --app-url http://host.docker.internal:3000
+#
+# ZAP is not a long-running service: the agent starts the ZAP baseline scan as
+# a short-lived sibling container through the Docker socket, exactly as it does
+# on a workstation.
+
+name: qa-agent
+
+services:
+  ollama:
+    image: ollama/ollama:0.34.1
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    # GPU acceleration (NVIDIA Container Toolkit required). Without it the
+    # model runs on the CPU: correct, but slow.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  agent:
+    build: .
+    image: qa-agent:0.1.0
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      QA_AGENT_LLM_BASE_URL: http://ollama:11434/v1
+      QA_AGENT_OLLAMA_HOST: http://ollama:11434
+      QA_AGENT_LLM_MODEL: qwen2.5-coder:3b
+      QA_AGENT_ZAP_EXCHANGE_VOLUME: qa-agent-zap-exchange
+      QA_AGENT_ZAP_EXCHANGE_DIR: /zap-exchange
+    volumes:
+      - workspace:/opt/qa-agent-data/workspace
+      - zap-exchange:/zap-exchange
+      # Lets the agent start the ZAP container. This grants control of the
+      # Docker daemon: acceptable on a dedicated scanning host, not on a shared one.
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      # Reach an application running on the Docker host.
+      - host.docker.internal:host-gateway
+
+volumes:
+  ollama-models:
+  workspace:
+  zap-exchange:
+    # A fixed name, so the agent can pass the same volume to the ZAP container.
+    name: qa-agent-zap-exchange

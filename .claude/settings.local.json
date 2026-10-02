@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(ollama ps 2>&1)"
+    ]
+  }
+}

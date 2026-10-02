@@ -1,0 +1,16 @@
+# Only pyproject.toml, README.md and qa_agent/ are needed in the image.
+.venv/
+venv/
+vendor/
+workspace/
+eval/
+tests/
+scripts/
+**/__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.env
+.git/

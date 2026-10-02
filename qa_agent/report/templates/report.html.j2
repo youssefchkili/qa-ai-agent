@@ -1,0 +1,204 @@
+{# Self-contained HTML report: no external CSS, fonts or scripts, so it opens
+   correctly on an air-gapped machine. Autoescaping is enabled for this
+   template, so text taken from the scanned application cannot inject markup. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QA report - {{ run_id }}</title>
+<style>
+  :root {
+    --critical: #b3123b; --high: #d1471b; --medium: #b07d09;
+    --low: #2f6f9f; --info: #667085;
+    --bg: #f7f8fa; --card: #ffffff; --line: #e3e6eb; --text: #1b1f27; --muted: #667085;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--text);
+         font: 15px/1.6 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 60rem; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin: 0 0 .3rem; }
+  h2 { font-size: 1.25rem; margin: 2.2rem 0 .8rem; padding-bottom: .4rem;
+       border-bottom: 2px solid var(--line); }
+  .sub { color: var(--muted); margin: 0 0 1.5rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 1rem 1.2rem; margin-bottom: .9rem; }
+  table { border-collapse: collapse; width: 100%; background: var(--card); }
+  th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid var(--line);
+           vertical-align: top; }
+  th { background: #eef1f5; font-weight: 600; }
+  .tiles { display: flex; flex-wrap: wrap; gap: .6rem; margin-bottom: 1rem; }
+  .tile { flex: 1 1 8rem; background: var(--card); border: 1px solid var(--line);
+          border-radius: 10px; padding: .7rem .9rem; }
+  .tile .n { font-size: 1.6rem; font-weight: 700; }
+  .tile .l { color: var(--muted); font-size: .78rem; text-transform: uppercase;
+             letter-spacing: .04em; }
+  .badge { display: inline-block; padding: .12rem .55rem; border-radius: 999px;
+           color: #fff; font-size: .72rem; font-weight: 700; text-transform: uppercase;
+           letter-spacing: .03em; }
+  .critical { background: var(--critical); } .high { background: var(--high); }
+  .medium { background: var(--medium); } .low { background: var(--low); }
+  .info { background: var(--info); }
+  .finding h3 { margin: .3rem 0 .5rem; font-size: 1.02rem; }
+  .meta { color: var(--muted); font-size: .84rem; margin: .2rem 0; word-break: break-word; }
+  code, pre { font-family: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace; }
+  code { background: #eef1f5; padding: .1rem .3rem; border-radius: 4px; font-size: .86rem; }
+  pre { background: #1b1f27; color: #e6e9ef; padding: .8rem; border-radius: 8px;
+        overflow-x: auto; font-size: .82rem; }
+  .warn { background: #fff6e5; border: 1px solid #f0d9a8; border-radius: 8px;
+          padding: .8rem 1rem; margin: 1rem 0; }
+  .fp { background: #6b4fbb; }
+  .pass { color: #1f7a4d; font-weight: 600; }
+  .fail { color: var(--high); font-weight: 600; }
+  .not_testable { color: var(--muted); font-weight: 600; }
+  .aside { font-size: .8rem; color: var(--muted); }
+  .summary { border-left: 4px solid #2f6f9f; }
+  .confirmed { color: #1f7a4d; font-weight: 600; }
+  .unverified { color: var(--critical); font-weight: 600; }
+  footer { color: var(--muted); font-size: .8rem; margin-top: 2.5rem;
+           border-top: 1px solid var(--line); padding-top: 1rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>QA report</h1>
+  <p class="sub">
+    Run <code>{{ run_id }}</code> &middot; {{ started_at }} &middot; {{ duration_s }}s
+    {% if repo_url %}<br>Repository: {{ repo_url }}{% if commit %} @ <code>{{ commit[:8] }}</code>{% endif %}{% endif %}
+    {% if app_url %}<br>Application: {{ app_url }}{% endif %}
+    {% if image_ref %}<br>Image: <code>{{ image_ref }}</code>{% endif %}
+    <br>Pages crawled: {{ pages_crawled }}
+  </p>
+
+  <div class="tiles">
+    <div class="tile"><div class="n">{{ total }}</div><div class="l">findings</div></div>
+    {% for name, count in by_severity.items() %}
+    <div class="tile"><div class="n">{{ count }}</div><div class="l">{{ name }}</div></div>
+    {% endfor %}
+    {% if unverified %}
+    <div class="tile"><div class="n">{{ unverified }}</div><div class="l">not reproduced</div></div>
+    {% endif %}
+    {% if false_positive_flags %}
+    <div class="tile"><div class="n">{{ false_positive_flags }}</div><div class="l">likely false positive</div></div>
+    {% endif %}
+  </div>
+
+  {% if executive_summary %}
+  <h2>Executive summary</h2>
+  <div class="card summary">
+    <p>{{ executive_summary }}</p>
+    <p class="aside">
+      {% if summary_source == "llm" %}Written by the local model {{ llm_model }} from the scan's facts;
+      every number in it was checked against the tool output.
+      {% else %}Generated from the scan's facts without the model ({{ summary_source }}).{% endif %}
+    </p>
+  </div>
+  {% endif %}
+
+  <h2>Tools</h2>
+  <table>
+    <tr><th>Tool</th><th>Verdict</th><th>Findings</th><th>Duration</th><th>Detail</th></tr>
+    {% for tool in tool_runs %}
+    <tr>
+      <td><code>{{ tool.tool }}</code></td>
+      <td>{{ tool.verdict }}</td>
+      <td>{{ tool.findings_count }}</td>
+      <td>{{ tool.duration_s }}s</td>
+      <td>{{ tool.detail }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  {% if tools_that_did_not_run %}
+  <div class="warn">
+    <strong>Coverage gap.</strong>
+    {{ tools_that_did_not_run | length }} tool(s) did not produce results. Whatever they
+    would have caught is missing here, which is not the same as the application
+    being clean in those areas.
+  </div>
+  {% endif %}
+
+  {% if flows %}
+  <h2>Generated test flows <span class="meta">({{ flows_ran }} of {{ flows | length }} ran)</span></h2>
+  <p class="aside">Planned by the local model as restricted step lists, then validated,
+    compiled into Playwright scripts and executed by the agent. The scripts are in the
+    run's <code>tests/</code> folder and can be re-run by hand.</p>
+  <table>
+    <tr><th>Flow</th><th>Page</th><th>Result</th><th>Steps</th></tr>
+    {% for flow in flows %}
+    <tr>
+      <td>{{ flow.name }}<div class="aside">{{ flow.attempts }} attempt(s){% if flow.script %} &middot; <code>{{ flow.script }}</code>{% endif %}</div></td>
+      <td><code>{{ flow.page_url }}</code></td>
+      <td><span class="{{ flow.status }}">{{ flow.status | replace("_", " ") }}</span>
+        {% if flow.message %}<div class="aside">{{ flow.message[:220] }}</div>{% endif %}</td>
+      <td class="aside">{% for step in flow.steps %}{{ step }}<br>{% endfor %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if notes %}
+  <h2>Notes</h2>
+  <div class="card"><ul>
+    {% for note in notes %}<li>{{ note }}</li>{% endfor %}
+  </ul></div>
+  {% endif %}
+
+  {% if not has_findings %}
+  <h2>Findings</h2>
+  <div class="card">No findings were reported by the tools that ran.</div>
+  {% else %}
+  {% for group in groups %}
+  <h2>{{ group.title }} <span class="meta">({{ group.count }})</span></h2>
+  {% for f in group.findings %}
+  <div class="card finding">
+    <span class="badge {{ f.effective_severity.value }}">{{ f.effective_severity.value }}</span>
+    {% if f.llm_annotation and f.llm_annotation.is_likely_false_positive %}
+    <span class="badge fp">likely false positive</span>
+    {% endif %}
+    {% if f.llm_annotation and f.llm_annotation.adjusted_severity %}
+    <span class="aside">re-scored by the model; the tool said {{ f.severity.value }}</span>
+    {% endif %}
+    <h3>{{ f.title }}</h3>
+    <p class="meta">Location: <code>{{ f.location }}</code></p>
+    <p class="meta">
+      Detected by: {{ f.sources | map(attribute='value') | join(', ') }}
+      {% if f.sources | length > 1 %}<span class="confirmed">&middot; independently confirmed</span>{% endif %}
+      {% if f.rule_id %} &middot; rule <code>{{ f.rule_id }}</code>{% endif %}
+    </p>
+    {% if f.metadata.affected_page_count %}
+    <p class="meta">Also seen on {{ f.metadata.affected_page_count }} page(s) in total.</p>
+    {% endif %}
+    <p class="meta">
+      {% if f.verified %}Verified from tool output ({{ f.verification_method }}).
+      {% else %}<span class="unverified">Not verified: could not be reproduced.</span>{% endif %}
+    </p>
+    {% if f.description %}<p>{{ f.description }}</p>{% endif %}
+    {% if f.evidence %}<pre>{{ f.evidence }}</pre>{% endif %}
+    {% if f.llm_annotation %}
+      {% if f.llm_annotation.plain_explanation %}
+      <p><strong>What this means:</strong> {{ f.llm_annotation.plain_explanation }}</p>
+      {% endif %}
+      {% if f.llm_annotation.suggested_fix %}
+      <p><strong>Suggested fix:</strong> {{ f.llm_annotation.suggested_fix }}</p>
+      {% endif %}
+      <p class="aside">Explanation and fix written by the local model
+        {{ f.llm_annotation.model }}; the finding itself is tool output.</p>
+    {% endif %}
+    {% if f.references %}
+    <p class="meta">References:
+      {% for ref in f.references %}<a href="{{ ref }}">{{ ref }}</a>{% if not loop.last %} &middot; {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endfor %}
+  {% endif %}
+
+  <footer>
+    Generated locally by qa-agent. Every finding traces back to deterministic tool
+    output; the raw tool responses are stored next to this file.
+  </footer>
+</main>
+</body>
+</html>

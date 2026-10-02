@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qa-agent"
+version = "0.1.0"
+description = "Fully local (on-premise) AI QA testing agent: scans a Git repo or a deployed web app and produces a structured QA report."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.7",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "httpx>=0.27",
+    "jinja2>=3.1",
+    "GitPython>=3.1.43",
+    "openai>=1.40",
+    "playwright>=1.45",
+    "axe-playwright-python>=0.1.4",
+]
+
+[project.optional-dependencies]
+# Semgrep is a heavy dependency tree and is really a CLI tool, so it is kept out
+# of the default install. Windows wheels exist from semgrep 1.17x onwards.
+scanners = ["semgrep>=1.177"]
+# Runs the private evaluation app (eval/target_app) for the metrics harness.
+eval = ["flask>=3.0"]
+dev = [
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+qa-agent = "qa_agent.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["qa_agent*"]
+
+[tool.setuptools.package-data]
+"qa_agent.report" = ["templates/*.j2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# The evaluation app is deliberately defective code. An auto-fix could silently
+# remove a planted bug and corrupt the evaluation, so the linter never sees it.
+extend-exclude = ["eval/target_app"]
+
+[tool.ruff.lint]
+# Each of these is a deliberate choice, not an oversight.
+ignore = [
+    # Typer's whole API is built on `typer.Option(...)` as a default value.
+    "B008",
+    # Run ids use local time on purpose: they are read by a human looking at
+    # their own workspace directory. Timestamps inside reports are UTC.
+    "DTZ005",
+    # run_command inspects returncode itself and turns it into a verdict;
+    # check=True would raise instead and lose the tool's own output.
+    "PLW1510",
+    # pydantic's model_post_init signature is fixed by the framework.
+    "PYI063",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test helpers build keyword defaults with dict(...) so they can be merged
+# with **overrides; a literal would be less readable here.
+"tests/*" = ["C408"]
+
+[tool.coverage.run]
+source = ["qa_agent"]

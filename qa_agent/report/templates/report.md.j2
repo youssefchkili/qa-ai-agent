@@ -1,0 +1,144 @@
+{# Markdown report. Plain text on purpose: readable in a terminal, diffable,
+   and easy to paste into an issue tracker. #}
+# QA report
+
+{# A line must never END with a block tag: trim_blocks would swallow the
+   newline and glue this line to the next one. Inline conditions are written
+   as expressions instead. #}
+- **Run:** `{{ run_id }}`
+- **Started:** {{ started_at }} (took {{ duration_s }}s)
+{% if repo_url %}
+- **Repository:** {{ repo_url }}{{ " @ `" ~ commit[:8] ~ "`" if commit else "" }}
+{% endif %}
+{% if app_url %}
+- **Application:** {{ app_url }}
+{% endif %}
+{% if image_ref %}
+- **Container image:** `{{ image_ref }}`
+{% endif %}
+- **Pages crawled:** {{ pages_crawled }}
+{% if executive_summary %}
+
+## Executive summary
+
+{{ executive_summary }}
+
+_{{ ("Written by the local model " ~ llm_model ~ " from the scan's facts; every number in it was checked against the tool output.") if summary_source == "llm" else ("Generated from the scan's facts without the model (" ~ summary_source ~ ").") }}_
+{% endif %}
+
+## Summary
+
+**{{ total }} verified finding(s)**{{ (" - " ~ unverified ~ " more did not reproduce and are listed as not verified") if unverified else "" }}{{ (" - " ~ false_positive_flags ~ " flagged by the model as likely false positives") if false_positive_flags else "" }}.
+
+| Severity | Count |
+|---|---|
+{% for name, count in by_severity.items() %}
+| {{ name }} | {{ count }} |
+{% endfor %}
+
+{% if by_category %}
+| Category | Count |
+|---|---|
+{% for name, count in by_category.items() %}
+| {{ name }} | {{ count }} |
+{% endfor %}
+{% endif %}
+
+## Tools
+
+| Tool | Verdict | Findings | Duration | Detail |
+|---|---|---|---|---|
+{% for tool in tool_runs %}
+| {{ tool.tool }} | {{ tool.verdict }} | {{ tool.findings_count }} | {{ tool.duration_s }}s | {{ tool.detail }} |
+{% endfor %}
+
+{% if tools_that_did_not_run %}
+> **Coverage gap.** {{ tools_that_did_not_run | length }} tool(s) did not produce results.
+> Anything they would have caught is absent from this report, which is not the
+> same as the application being clean in those areas.
+{% endif %}
+
+{% if flows %}
+## Generated test flows ({{ flows_ran }} of {{ flows | length }} ran)
+
+Planned by the local model as restricted step lists, then validated, compiled
+into Playwright scripts and executed by the agent (see the run's `tests/` folder).
+
+| Flow | Page | Result | Attempts |
+|---|---|---|---|
+{% for flow in flows %}
+| {{ flow.name }} | `{{ flow.page_url }}` | {{ flow.status | replace("_", " ") }} | {{ flow.attempts }} |
+{% endfor %}
+
+{% endif %}
+{% if notes %}
+### Notes
+
+{% for note in notes %}
+- {{ note }}
+{% endfor %}
+{% endif %}
+
+{% if not has_findings %}
+## Findings
+
+No findings were reported by the tools that ran.
+{% else %}
+{% for group in groups %}
+## {{ group.title }} ({{ group.count }})
+
+{% for f in group.findings %}
+### [{{ f.effective_severity.value | upper }}] {{ f.title }}
+
+{% if f.llm_annotation and f.llm_annotation.is_likely_false_positive %}
+> Flagged by the local model as a **likely false positive**; kept here for a human to decide.
+
+{% endif %}
+{% if f.llm_annotation and f.llm_annotation.adjusted_severity %}
+> Re-scored by the local model; the tool said **{{ f.severity.value }}**.
+
+{% endif %}
+- **Location:** `{{ f.location }}`
+- **Detected by:** {{ f.sources | map(attribute='value') | join(', ') }}{{ " (independently confirmed)" if f.sources | length > 1 else "" }}
+{% if f.rule_id %}
+- **Rule:** `{{ f.rule_id }}`
+{% endif %}
+{% if f.metadata.affected_page_count %}
+- **Also seen on:** {{ f.metadata.affected_page_count }} page(s) in total
+{% endif %}
+- **Verified:** {{ 'yes' if f.verified else 'NO - could not be reproduced' }} ({{ f.verification_method }})
+
+{% if f.description %}
+{{ f.description }}
+{% endif %}
+
+{% if f.evidence %}
+**Evidence**
+
+```
+{{ f.evidence }}
+```
+{% endif %}
+{% if f.llm_annotation %}
+{% if f.llm_annotation.plain_explanation %}
+**What this means:** {{ f.llm_annotation.plain_explanation }}
+{% endif %}
+{% if f.llm_annotation.suggested_fix %}
+**Suggested fix:** {{ f.llm_annotation.suggested_fix }}
+{% endif %}
+{% endif %}
+{% if f.references %}
+**References**
+{% for ref in f.references %}
+- {{ ref }}
+{% endfor %}
+{% endif %}
+
+---
+
+{% endfor %}
+{% endfor %}
+{% endif %}
+
+<sub>Generated locally by qa-agent. Every finding above comes from deterministic
+tool output; raw tool responses are kept alongside this report.</sub>
